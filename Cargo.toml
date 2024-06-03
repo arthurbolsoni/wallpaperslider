@@ -1,0 +1,18 @@
+[package]
+name = "wallpaperslides"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+home = "0.5.5"
+reqwest = "0.11.18"
+wallpaper = { version = "3", features = ["from_url"] }
+tokio = { version = "1", features = ["full"] }
+regex = "1.9.1"
+tray-item = "0.10.0"
+winapi = { version = "0.3", features = ["consoleapi", "wincon", "winuser"] }
+
+[build-dependencies]
+embed-resource = "2.3"
