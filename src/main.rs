@@ -2,17 +2,17 @@
 
 use home;
 use reqwest;
-use std::error::Error;
 use std::{fs, time::Duration};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 use tokio::task;
 use tokio::time::interval;
-use tray_item::{IconSource, TrayItem};
 
-use winapi::um::wincon::GetConsoleWindow;
-use winapi::um::winuser::{ShowWindow, SW_HIDE, SW_MINIMIZE};
+use trayicon::{Icon, MenuBuilder, MenuItem, TrayIcon, TrayIconBuilder};
+
+use core::mem::MaybeUninit;
+use winapi::um::winuser;
 
 use wallpaper;
 
@@ -64,7 +64,15 @@ async fn download_wallpaper(download_url: &str, download_path: &str) -> String {
         Err(_) => return String::from("Erro ao ler o stream de bytes."),
     };
 
-    let mut out = match File::create(format!("{}/wallpaper.jpg", download_path)).await {
+    let file_name = download_url
+        .split("/")
+        .last()
+        .unwrap()
+        .split(".")
+        .next()
+        .unwrap();
+
+    let mut out = match File::create(format!("{}/{}.jpg", download_path, file_name)).await {
         Ok(file) => file,
         Err(err) => return format!("Erro ao criar o arquivo: {:?}", err),
     };
@@ -73,7 +81,7 @@ async fn download_wallpaper(download_url: &str, download_path: &str) -> String {
         return format!("Erro ao escrever no arquivo: {:?}", err);
     }
 
-    return format!("{}/wallpaper.jpg", download_path);
+    return format!("{}/{}.jpg", download_path, file_name);
 }
 
 async fn change_wallpaper() {
@@ -95,8 +103,6 @@ async fn change_wallpaper() {
             Ok(_) => println!("Diretório criado: {:?}", download_path),
             Err(e) => eprintln!("Erro ao criar diretório: {}", e),
         }
-    } else {
-        println!("Diretório já existe: {:?}", download_path);
     }
 
     let wallpaper_path =
@@ -108,59 +114,83 @@ async fn change_wallpaper() {
     });
 }
 
-async fn setup_tray_icon(tx: mpsc::Sender<i32>) -> Result<TrayItem, Box<dyn Error>> {
-    let mut tray = TrayItem::new("Wallpapers Slider", IconSource::Resource("id"))?;
-
-    tray.add_label("Wallpapers Slider").unwrap();
-
-    let tx_1 = tx.clone();
-    tray.add_menu_item("Change Wallpaper", move || {
-        tx_1.try_send(1).unwrap();
-    })
-    .unwrap();
-
-    let tx_2 = tx.clone();
-    tray.add_menu_item("Exit", move || {
-        tx_2.try_send(2).unwrap();
-    })
-    .unwrap();
-
-    Ok(tray)
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+enum Events {
+    RightClickTrayIcon,
+    LeftClickTrayIcon,
+    DoubleClickTrayIcon,
+    Exit,
+    ChangeWallpaper,
 }
 
 #[tokio::main]
 async fn main() {
-    let (tx, mut rx) = mpsc::channel(1);
-
-    let tray = setup_tray_icon(tx).await.unwrap();
-
-    task::spawn(async move {
-        while let Some(message) = rx.recv().await {
-            match message {
-                1 => {
-                    change_wallpaper().await;
-                }
-                2 => {
-                    std::process::exit(0);
-                }
-                _ => {
-                    println!("Mensagem desconhecida: {}", message);
-                }
-            }
-        }
-    });
-
     let mut interval = interval(Duration::from_secs(60 * 60 * 1));
 
-    unsafe {
-        let console_window = GetConsoleWindow();
-            // ShowWindow(console_window, SW_MINIMIZE);
-            // ShowWindow(console_window, SW_HIDE);
+    let (s, r) = std::sync::mpsc::channel::<Events>();
+    let second_icon = Icon::from_buffer(include_bytes!("../icon.ico"), None, None).unwrap();
+    let first_icon = Icon::from_buffer(include_bytes!("../icon.ico"), None, None).unwrap();
 
-    }
+    let mut tray_icon = TrayIconBuilder::new()
+        .sender(move |e: &Events| {
+            let _ = s.send(*e);
+        })
+        .icon_from_buffer(include_bytes!("../icon.ico"))
+        .tooltip("Wallpapers Slider")
+        .on_click(Events::LeftClickTrayIcon)
+        .on_right_click(Events::RightClickTrayIcon)
+        .menu(
+            MenuBuilder::new()
+                .item("Change Wallpaper", Events::ChangeWallpaper)
+                .separator()
+                .item("Exit", Events::Exit),
+        )
+        .build()
+        .unwrap();
+
+    tokio::task::spawn(async move {
+        println!("Starting...");
+        change_wallpaper().await;
+
+        r.iter().for_each(|m| match m {
+            Events::RightClickTrayIcon => {
+                tray_icon.show_menu().unwrap();
+            }
+            Events::LeftClickTrayIcon => {
+                tokio::task::spawn(async move {
+                    change_wallpaper().await;
+                });
+            }
+            Events::Exit => {
+                println!("Please exit");
+                std::process::exit(0);
+            }
+            Events::ChangeWallpaper => {
+                tokio::task::spawn(async move {
+                    change_wallpaper().await;
+                });
+            }
+            e => {
+                println!("{:?}", e);
+            }
+        });
+    });
 
     loop {
-        interval.tick().await;
-        change_wallpaper().await;
+        unsafe {
+            let mut msg = MaybeUninit::uninit();
+            let bret = winuser::GetMessageA(msg.as_mut_ptr(), 0 as _, 0, 0);
+            if bret > 0 {
+                winuser::TranslateMessage(msg.as_ptr());
+                winuser::DispatchMessageA(msg.as_ptr());
+            } else {
+                break;
+            }
+        }
     }
+
+    // loop {
+    //     interval.tick().await;
+    //     change_wallpaper().await;
+    // }
 }
