@@ -19,6 +19,8 @@ use winapi::um::winuser;
 use winreg::enums::*;
 use winreg::RegKey;
 
+use open;
+
 use regex::Regex;
 
 async fn last_wallpaper_wide(screen_size: &str) -> String {
@@ -200,6 +202,7 @@ enum Events {
     DoubleClickTrayIcon,
     Exit,
     ChangeWallpaper,
+    DownloadFolder,
 }
 
 #[tokio::main]
@@ -222,6 +225,7 @@ async fn main() {
             MenuBuilder::new()
                 .item("Change Wallpaper", Events::ChangeWallpaper)
                 .separator()
+                .item("Download Folder", Events::DownloadFolder)
                 .item("Exit", Events::Exit),
         )
         .build()
@@ -248,6 +252,24 @@ async fn main() {
                 tokio::task::spawn(async move {
                     change_wallpaper().await;
                 });
+            }
+            Events::DownloadFolder => {
+                let download_path = home::home_dir()
+                    .unwrap()
+                    .join("Pictures")
+                    .join("WallpapersSlider");
+
+                if !download_path.exists() {
+                    match fs::create_dir_all(&download_path) {
+                        Ok(_) => println!("Diretório criado: {:?}", download_path),
+                        Err(e) => eprintln!("Erro ao criar diretório: {}", e),
+                    }
+                }
+
+                match open::that(&download_path) {
+                    Ok(_) => println!("Diretório aberto: {:?}", download_path),
+                    Err(e) => eprintln!("Erro ao abrir diretório: {}", e),
+                }
             }
             e => {
                 println!("{:?}", e);
