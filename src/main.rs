@@ -84,7 +84,17 @@ async fn download_wallpaper(download_url: &str, download_path: &str) -> String {
         return format!("Erro ao escrever no arquivo: {:?}", err);
     }
 
-    return format!("{}/{}.jpg", download_path, file_name);
+    // save as bmp
+    let mut out = match File::create(format!("{}/wallpaper.bmp", download_path)).await {
+        Ok(file) => file,
+        Err(err) => return format!("Erro ao criar o arquivo: {:?}", err),
+    };
+
+    if let Err(err) = out.write_all(&bytes).await {
+        return format!("Erro ao escrever no arquivo: {:?}", err);
+    }
+
+    return format!("{}\\wallpaper.bmp", download_path);
 }
 
 pub enum Mode {
@@ -125,7 +135,7 @@ async fn set_wallpaper_from_path(path: &str, mode: Mode) {
     match hkcu.open_subkey_with_flags(path_subkey, KEY_WRITE) {
         Ok(desktop_key) => {
             if let Err(e) = desktop_key.set_value("Wallpaper", &path) {
-                eprintln!("Erro ao definir o valor do registro: {}", e);
+                eprintln!("Erro ao definir o valor do registro: {}", e); 
             }
         }
         Err(e) => {
