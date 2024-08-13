@@ -2,6 +2,7 @@
 
 use home;
 use reqwest;
+use reqwest::Error;
 use std::{fs, time::Duration};
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -23,13 +24,11 @@ use open;
 
 use regex::Regex;
 
-async fn last_wallpaper_wide(screen_size: &str) -> String {
+async fn last_wallpaper_wide(screen_size: &str) -> Result<String, Error> {
     let body = reqwest::get("https://wallpaperswide.com/rss/2560x1080-ds_wallpapers-r-random-p-1")
-        .await
-        .unwrap()
+        .await?
         .text()
-        .await
-        .unwrap();
+        .await?;
 
     let re_link = Regex::new(r#"<link>(.*?)</link>"#).unwrap();
     let link = re_link
@@ -40,17 +39,17 @@ async fn last_wallpaper_wide(screen_size: &str) -> String {
 
     println!("{:?}", link);
 
-    let re_image_name = Regex::new(r"http://wallpaperswide.com/(.*?)-wallpapers.html").unwrap();
+    let re_image_name = Regex::new(r"https://wallpaperswide.com/(.*?)-wallpapers.html").unwrap();
     let image_name = re_image_name
         .captures_iter(&link)
         .map(|x| x[1].to_string())
         .collect::<Vec<_>>()[0]
         .to_string();
 
-    return format!(
+    Ok(format!(
         "https://wallpaperswide.com/download/{}-{}.html",
         image_name, screen_size
-    );
+    ))
 }
 
 async fn download_wallpaper(download_url: &str, download_path: &str) -> String {
@@ -137,7 +136,7 @@ async fn set_wallpaper_from_path(path: &str, mode: Mode) {
     match hkcu.open_subkey_with_flags(path_subkey, KEY_WRITE) {
         Ok(desktop_key) => {
             if let Err(e) = desktop_key.set_value("Wallpaper", &path) {
-                eprintln!("Erro ao definir o valor do registro: {}", e); 
+                eprintln!("Erro ao definir o valor do registro: {}", e);
             }
         }
         Err(e) => {
@@ -173,7 +172,13 @@ async fn change_wallpaper() {
 
     let screen_size = "2560x1080";
 
-    let _last_wallpaper_wide = last_wallpaper_wide(screen_size).await;
+    let _last_wallpaper_wide = last_wallpaper_wide(screen_size).await.unwrap_or_else(|e| {
+        eprintln!("Erro ao obter o último wallpaper: {}", e);
+        String::from("")
+    });
+    if _last_wallpaper_wide == "" {
+        return;
+    }
 
     let download_path = home::home_dir()
         .unwrap()
@@ -207,11 +212,14 @@ enum Events {
 
 #[tokio::main]
 async fn main() {
+    print!("Starting...");
     let mut interval = interval(Duration::from_secs(60 * 60 * 1));
 
     let (s, r) = std::sync::mpsc::channel::<Events>();
     let second_icon = Icon::from_buffer(include_bytes!("../icon.ico"), None, None).unwrap();
     let first_icon = Icon::from_buffer(include_bytes!("../icon.ico"), None, None).unwrap();
+
+    println!("Tray Icon");
 
     let mut tray_icon = TrayIconBuilder::new()
         .sender(move |e: &Events| {
@@ -230,6 +238,8 @@ async fn main() {
         )
         .build()
         .unwrap();
+
+    println!("Event Loop");
 
     tokio::task::spawn(async move {
         println!("Starting...");
