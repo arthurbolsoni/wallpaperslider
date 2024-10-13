@@ -1,6 +1,7 @@
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
 
 use home;
+use rand::Rng;
 use reqwest;
 use reqwest::Error;
 use std::{fs, time::Duration};
@@ -20,6 +21,8 @@ use winapi::um::winuser;
 use winreg::enums::*;
 use winreg::RegKey;
 
+use rand::thread_rng;
+
 use open;
 
 use regex::Regex;
@@ -31,14 +34,15 @@ async fn last_wallpaper_wide(screen_size: &str) -> Result<String, Error> {
         .await?;
 
     let re_link = Regex::new(r#"<link>(.*?)</link>"#).unwrap();
-    let link = re_link
+    let links = re_link
         .captures_iter(&body)
         .map(|x| x[1].to_string())
-        .collect::<Vec<_>>()[1]
-        .to_string();
+        .collect::<Vec<_>>();
 
-    println!("{:?}", link);
+    let random_int = thread_rng().gen_range(0..links.len());
 
+    let link = links[random_int].clone();
+    
     let re_image_name = Regex::new(r"https://wallpaperswide.com/(.*?)-wallpapers.html").unwrap();
     let image_name = re_image_name
         .captures_iter(&link)
