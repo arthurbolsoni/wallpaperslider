@@ -1,6 +1,6 @@
 // #![windows_subsystem = "windows"]
 
-use trayicon::{MenuBuilder, TrayIconBuilder};
+use trayicon::{Icon, MenuBuilder, TrayIconBuilder};
 
 use core::mem::MaybeUninit;
 
@@ -51,13 +51,17 @@ async fn main() {
 
     let (s, r) = std::sync::mpsc::channel::<Events>();
 
+    let icon = Icon::from_buffer(include_bytes!("../icon.ico"), None, None).unwrap();
+    let icon_loading =
+        Icon::from_buffer(include_bytes!("../icon_loading.ico"), None, None).unwrap();
+
     println!("Tray Icon");
 
     let mut tray_icon = TrayIconBuilder::new()
         .sender(move |e: &Events| {
             let _ = s.send(*e);
         })
-        .icon_from_buffer(include_bytes!("../icon.ico"))
+        .icon(icon.clone())
         .tooltip("Wallpapers Slider")
         .on_right_click(Events::RightClickTrayIcon)
         .on_double_click(Events::DoubleClickTrayIcon)
@@ -81,41 +85,41 @@ async fn main() {
 
         change_wallpaper(download_path.clone()).await;
 
-        r.iter().for_each(|m| match m {
-            Events::DoubleClickTrayIcon => {
-                println!("Double Click Tray Icon");
+        while let Ok(event) = r.recv() {
+            println!("Event");
+            match event {
+                Events::DoubleClickTrayIcon => {
+                    println!("Double Click Tray Icon");
+                    tray_icon.set_icon(&icon_loading).unwrap();
 
-                let download_path_clone = download_path.clone();
+                    change_wallpaper(download_path.clone()).await;
 
-                tokio::task::spawn_blocking(move || {
-                    tokio::runtime::Handle::current()
-                        .block_on(change_wallpaper(download_path_clone));
-                });
-            }
-            Events::RightClickTrayIcon => {
-                tray_icon.show_menu().unwrap();
-            }
-            Events::Exit => {
-                println!("Exit");
-                std::process::exit(0);
-            }
-            Events::ChangeWallpaper => {
-                println!("Change Wallpaper");
-                let download_path_clone = download_path.clone();
+                    tray_icon.set_icon(&icon).unwrap();
+                }
+                Events::RightClickTrayIcon => {
+                    tray_icon.show_menu().unwrap();
+                }
+                Events::Exit => {
+                    println!("Exit");
+                    std::process::exit(0);
+                }
+                Events::ChangeWallpaper => {
+                    println!("Change Wallpaper");
+                    tray_icon.set_icon(&icon_loading).unwrap();
 
-                tokio::task::spawn_blocking(move || {
-                    tokio::runtime::Handle::current()
-                        .block_on(change_wallpaper(download_path_clone));
-                });
-            }
-            Events::DownloadFolder => {
-                println!("Download Folder");
-                match open::that(&download_path) {
-                    Ok(_) => println!("Diretório aberto: {:?}", &download_path),
-                    Err(e) => eprintln!("Erro ao abrir diretório: {}", e),
+                    change_wallpaper(download_path.clone()).await;
+                    
+                    tray_icon.set_icon(&icon).unwrap();
+                }
+                Events::DownloadFolder => {
+                    println!("Download Folder");
+                    match open::that(&download_path) {
+                        Ok(_) => println!("Diretório aberto: {:?}", &download_path),
+                        Err(e) => eprintln!("Erro ao abrir diretório: {}", e),
+                    }
                 }
             }
-        });
+        }
     });
 
     loop {

@@ -12,6 +12,7 @@ tokio = { version = "1", features = ["full"] }
 regex = "1.9.1"
 trayicon = "0.2.0"
 winapi = "0.3.9"
+winit = "0.30.5"
 winreg = "0.52.0"
 open = "5.1.4"
 rand = "0.8.5"
